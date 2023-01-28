@@ -17,6 +17,7 @@ static struct internal_function internal_functions[] =
 	{"swap",  __swapfunction},
 	{"rot",   __rotfunction},
 	{"bi",    __bifunction},
+	{"times", __timesfunction},
 	{"+",     __addfunction},
 	{"*",     __mulfunction},
 	{".",     __dropfunction},

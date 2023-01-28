@@ -174,6 +174,30 @@ void __rotfunction(struct environment env[static 1]) {
 	stack_push(env->stack, a);
 }
 
+
+void lambda_copy(struct function *dest, struct function *src) {
+	memcpy(dest, src, sizeof(*dest));
+
+	dest->words = malloc(sizeof(struct word *) * sizeof(dest->size));
+	for(size_t i = 0; i < dest->size; i++) {
+		dest->words[i] = malloc(sizeof(struct word));
+		memcpy(dest->words[i], src->words[i], sizeof(struct word));
+	}
+}
+
+void word_copy(struct word *dest, struct word *src) {
+	memcpy(dest, src, sizeof(*dest));
+
+	switch(src->type) {
+		case WORD_TYPE_LAMBDA:
+			dest->lambda = malloc(sizeof(struct function));
+			lambda_copy(dest->lambda, src->lambda);
+			break;
+		default:
+			break;
+	}
+}
+
 void __bifunction(struct environment env[static 1]) {
 	struct word *a, *b, *c;
 	_Bool result;
@@ -186,7 +210,7 @@ void __bifunction(struct environment env[static 1]) {
 		fatalf("error: bi operating on non lambda type.\n");
 
 	struct word *d = calloc(1, sizeof(*d));
-	memcpy(d, a, sizeof(*d));
+	word_copy(d, a);
 
 	stack_push(env->stack, a);
 	stack_push(env->stack, b);
@@ -195,6 +219,29 @@ void __bifunction(struct environment env[static 1]) {
 	stack_push(env->stack, d);
 	stack_push(env->stack, c);
 	__applyfunction(env);
+}
+
+void __timesfunction(struct environment env[static 1]) {
+	struct word *a, *b;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	if(a->type != WORD_TYPE_VALUE || (a->type == WORD_TYPE_VALUE && a->value.type != WORD_VALUE_TYPE_INTEGER) || \
+	   b->type != WORD_TYPE_LAMBDA)
+		fatalf("error: times expects an integer and a lambda\n");
+
+	for(int64_t i = 0; i < a->value.integer; i++) {
+		struct word *c = calloc(1, sizeof(*c));
+		word_copy(c, b);
+
+		stack_push(env->stack, c);
+		__applyfunction(env);
+	}
+
+	free(a); free(b);
 }
 
 void __dupfunction(struct environment env[static 1]) {
