@@ -82,7 +82,10 @@ void __mulfunction(struct environment env[static 1]);
 void __applyfunction(struct environment env[static 1]);
 void __printfunction(struct environment env[static 1]);
 void __dropfunction(struct environment env[static 1]);
-void __dupfunction(struct environment env[static 1]) ;
+void __dupfunction(struct environment env[static 1]);
+void __swapfunction(struct environment env[static 1]);
+void __bifunction(struct environment env[static 1]);
+void __rotfunction(struct environment env[static 1]);
 
 void environment_copy(struct environment *dest, struct environment *src);
 void environment_execute(struct environment *env);

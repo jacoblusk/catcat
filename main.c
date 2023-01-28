@@ -10,8 +10,7 @@ int main(int argc, char **argv) {
 	struct lexer lexer;
 	lexer_init(&lexer);
 
-	char const *program = "add-one: 1 1 + print ;\n"
-						  "main   : add-one ;";
+	char const *program = "main: 5 [ 2 * ] [ 3 + ] bi + print ;";
 
 	struct token *tokens = lexer_tokenize(&lexer, program);
 	struct parser parser = {tokens};

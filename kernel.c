@@ -149,6 +149,54 @@ void __dropfunction(struct environment env[static 1]) {
 	free(a);
 }
 
+void __swapfunction(struct environment env[static 1]) {
+	struct word *a, *b;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	stack_push(env->stack, b);
+	stack_push(env->stack, a);
+}
+
+void __rotfunction(struct environment env[static 1]) {
+	struct word *a, *b, *c;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b), stack_pop(env->stack, &c));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	stack_push(env->stack, b);
+	stack_push(env->stack, c);
+	stack_push(env->stack, a);
+}
+
+void __bifunction(struct environment env[static 1]) {
+	struct word *a, *b, *c;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b), stack_pop(env->stack, &c));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	if(b->type != WORD_TYPE_LAMBDA || c->type != WORD_TYPE_LAMBDA)
+		fatalf("error: bi operating on non lambda type.\n");
+
+	struct word *d = calloc(1, sizeof(*d));
+	memcpy(d, a, sizeof(*d));
+
+	stack_push(env->stack, a);
+	stack_push(env->stack, b);
+	__applyfunction(env);
+
+	stack_push(env->stack, d);
+	stack_push(env->stack, c);
+	__applyfunction(env);
+}
+
 void __dupfunction(struct environment env[static 1]) {
 	struct word *a, *b;
 	_Bool result;

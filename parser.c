@@ -14,6 +14,9 @@ static struct internal_function internal_functions[] =
 	{"apply", __applyfunction},
 	{"print", __printfunction},
 	{"dup",   __dupfunction},
+	{"swap",  __swapfunction},
+	{"rot",   __rotfunction},
+	{"bi",    __bifunction},
 	{"+",     __addfunction},
 	{"*",     __mulfunction},
 	{".",     __dropfunction},
@@ -22,7 +25,7 @@ static struct internal_function internal_functions[] =
 
 struct function *make_function(char const *name) {
 	struct function *f = malloc(sizeof(*f));
-	f->name = NULL;
+	f->name = "[lambda]";
 
 	if(name)
 		f->name = strdup(name);
@@ -111,7 +114,7 @@ struct environment *parser_parse_program(struct parser parser[static 1]) {
 	}
 
 	if(!foundmain)
-		fatalf("error: could not find entry point main.");
+		fatalf("error: could not find entry point main.\n");
 
 	return env;
 }
@@ -124,14 +127,14 @@ struct function *parser_parse_function(struct parser parser[static 1], struct en
 		return NULL;
 
 	if(token->type != TOKEN_TYPE_IDENTIFIER)
-		fatalf("error: expected function name, but got %s instead.", token->lexeme);
+		fatalf("error: expected function name, but got %s instead.\n", token->lexeme);
 
 	struct function *function = make_function(token->lexeme);
 
 	free(token); tokens_pop(&parser->tokens, &token);
 
 	if(token->type != TOKEN_TYPE_COLON)
-		fatalf("error: expected colon after function name, but got %s instead.", token->lexeme);
+		fatalf("error: expected colon after function name, but got %s instead.\n", token->lexeme);
 
 	parser_parse_function_body(parser, env, function, 0);
 
@@ -147,7 +150,7 @@ void parser_parse_function_body(struct parser parser[static 1], struct environme
 		tokens_pop(&parser->tokens, &token);
 
 		if(!token) {
-			fatalf("error: end of tokens, but expected end of function.\n");
+			fatalf("error in function %s: end of tokens, but expected end of function.\n", function->name);
 		}
 
 		switch(token->type) {
@@ -185,7 +188,7 @@ void parser_parse_function_body(struct parser parser[static 1], struct environme
 					}
 
 					if(!found_globalfn)
-						fatalf("error: found unknown identifier, %s\n", token->lexeme);
+						fatalf("error in function %s: found unknown identifier, %s.\n", function->name, token->lexeme);
 				}
 				break;
 			}
@@ -200,14 +203,14 @@ void parser_parse_function_body(struct parser parser[static 1], struct environme
 			}
 			case TOKEN_TYPE_RIGHT_BRACKET: {
 				if(!islambda) {
-					fatalf("error: found a ending bracket, but not parsing a lambda.\n");
+					fatalf("error in function %s: found a ending bracket, but not parsing a lambda.\n", function->name);
 				}
 				
 				free(token);
 				return;
 			}
 			default: {
-				fatalf("error: unexpected token while parsing\n");
+				fatalf("error in function %s: unexpected token while parsing.\n", function->name);
 			}
 		}
 
