@@ -276,7 +276,10 @@ void environment_execute(struct environment env[static 1]) {
 		switch(w->type) {
 		case WORD_TYPE_LAMBDA:
 		case WORD_TYPE_VALUE:
-			stack_push(env->stack, w);
+			struct word *w_copy = calloc(1, sizeof(*w_copy));
+			word_copy(w_copy, w);
+
+			stack_push(env->stack, w_copy);
 			break;
 		case WORD_TYPE_FUNCTION:
 			if(w->function.is_cfunction) {
