@@ -1,6 +1,12 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
+#define WIN32_LEAN_AND_MEAN
+
+#include <windows.h>
+
+#include <ffi.h>
+
 #include "parser.h"
 
 struct word;
@@ -43,11 +49,27 @@ struct internal_function {
 	cfunction function;
 };
 
+enum function_type {
+	FUNCTION_TYPE_CFUNCTION,
+	FUNCTION_TYPE_FFI,
+	FUNCTION_TYPE_REGULAR
+};
+
+struct ffi_function {
+	char *name;
+	ffi_cif cif;
+	FARPROC cfn;
+	ffi_type **args;
+	ffi_type rtype;
+	size_t args_size;
+};
+
 struct word_function {
-	_Bool is_cfunction;
+	enum function_type type;
 	union {
-		cfunction cfunction;
-		struct function *function;
+		struct internal_function cfn;
+		struct ffi_function *ffi_fn;
+		struct function *fn;
 	};
 };
 
@@ -67,7 +89,7 @@ struct stack {
 };
 
 struct environment {
-	struct function **globals;
+	struct word **globals;
 	size_t globals_capacity;
 	size_t globals_size;
 	struct function *entry;
@@ -87,9 +109,17 @@ void __swapfunction(struct environment env[static 1]);
 void __bifunction(struct environment env[static 1]);
 void __timesfunction(struct environment env[static 1]);
 void __rotfunction(struct environment env[static 1]);
+void __composefunction(struct environment env[static 1]);
+void __curryfunction(struct environment env[static 1]);
+void __printsfunction(struct environment env[static 1]);
+void __equalfunction(struct environment env[static 1]);
+void __putstestffifunction(struct environment env[static 1]);
 
 void environment_copy(struct environment *dest, struct environment *src);
 void environment_execute(struct environment *env);
 struct environment *make_environment();
+
+void word_copy(struct word *dest, struct word *src);
+void function_add_word(struct function f[static 1], struct word w[static 1]);
 
 #endif

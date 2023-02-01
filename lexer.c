@@ -34,6 +34,7 @@ struct token *token_make_syntax(char c, struct cursor cursor[static 1]) {
 	case '.':
 	case '+':
 	case '*':
+	case '-':
 		type = TOKEN_TYPE_IDENTIFIER;
 		break;
 	default:
@@ -108,7 +109,7 @@ void lexer_init(struct lexer l[static 1]) {
 }
 
 _Bool isvalid_ident(char c) {
-	return isalpha(c) || isdigit(c) || c == '-' || c =='?' || c == '!';
+	return isalpha(c) || isdigit(c) || c == '-' || c =='?' || c == '!' || c =='@' || c == '*';
 }
 
 struct token *lexer_lex_identifier(struct lexer l[static 1]) {
@@ -127,6 +128,32 @@ struct token *lexer_lex_identifier(struct lexer l[static 1]) {
 	memcpy(identifier, l->source - length, sizeof(char) * length);
 
 	struct token *token = token_make_token(TOKEN_TYPE_IDENTIFIER, &cursor, identifier);
+	return token;
+}
+
+struct token *lexer_lex_string(struct lexer l[static 1]) {
+	size_t length = 0;
+	struct cursor cursor = l->cursor;
+	char c;
+
+	lexer_advance(l);
+
+	while((c = lexer_peek(l)) != '"') {
+		length++;
+		lexer_advance(l);
+	}
+
+	lexer_advance(l);
+
+	char *string = malloc(sizeof(char) * (length + 1));
+	string[length] = '\0';
+
+	memcpy(string, l->source - length - 1, sizeof(char) * length);
+
+	struct token *token = token_make_token(TOKEN_TYPE_STRING, &cursor, string);
+	token->literal.type = LITERAL_TYPE_STRING;
+	token->literal.string = string;
+
 	return token;
 }
 
@@ -177,6 +204,8 @@ struct token *lexer_tokenize(struct lexer l[static 1],
 			token = token_make_syntax(c, &l->cursor);
 			lexer_advance(l);
 			goto add_token_to_list;
+		case '"':
+			token = lexer_lex_string(l);
 		}
 
 		if(isalpha(c)) {

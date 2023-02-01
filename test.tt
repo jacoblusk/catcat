@@ -1,0 +1,3 @@
+ffi@puts: "msvcrt.dll" int pointer ;
+
+main: "test" putstestffi ;

@@ -3,7 +3,7 @@ CFLAGS := -g -fsanitize=address -fno-omit-frame-pointer
 all: catcat.exe
 
 catcat.exe: main.o lexer.o parser.o kernel.o
-	clang $(CFLAGS) $^ -o $@
+	clang $(CFLAGS) $^ -o $@ -llibffi
 
 main.o: main.c lexer.h kernel.h parser.h
 	clang $(CFLAGS) -c $< -o $@

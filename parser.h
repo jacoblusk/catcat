@@ -14,7 +14,7 @@ struct parser {
 };
 
 struct environment *parser_parse_program(struct parser parser[static 1]);
-struct function *parser_parse_function(struct parser parser[static 1], struct environment *env);
+struct word *parser_parse_function(struct parser parser[static 1], struct environment *env);
 void parser_parse_function_body(struct parser parser[static 1], struct environment *env,
 								struct function *function, _Bool islambda);
 

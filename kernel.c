@@ -1,9 +1,20 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <ffi.h>
 
 #include "kernel.h"
 #include "error.h"
+
+void function_add_word(struct function f[static 1], struct word w[static 1]) {
+	if(f->capacity <= (f->size + 1)) {
+		f->capacity++;
+		f->capacity *= 2;
+		f->words = realloc(f->words, sizeof(struct word *) * f->capacity);
+	}
+
+	f->words[f->size++] = w;
+}
 
 _Bool stack_pop(struct stack s[static 1], struct word *out[static 1]) {
 	if(s->ndata == 0) {
@@ -16,6 +27,52 @@ _Bool stack_pop(struct stack s[static 1], struct word *out[static 1]) {
 
 void stack_push(struct stack s[static 1], struct word in[static 1]) {
 	s->data[s->ndata++] = in;
+}
+
+void print_word(struct word w[static 1]) {
+	switch(w->type) {
+	case WORD_TYPE_VALUE:
+		switch(w->value.type) {
+		case WORD_VALUE_TYPE_INTEGER:
+			printf("%lld", w->value.integer);
+			break;
+		case WORD_VALUE_TYPE_STRING:
+			printf("%s", w->value.string);
+			break;
+		default:
+			fatalf("error: unspported value printing\n");
+		} 
+		break;
+
+	case WORD_TYPE_LAMBDA:
+		printf("[ ");
+		for(size_t i = 0; i < w->lambda->size; i++) {
+			print_word(w->lambda->words[i]);
+			printf(" ");
+		}
+
+		printf("]");
+		break;
+	case WORD_TYPE_FUNCTION:
+		switch(w->function.type) {
+		case FUNCTION_TYPE_REGULAR:
+			printf("%s", w->function.fn->name);
+			break;
+		case FUNCTION_TYPE_CFUNCTION:
+			printf("%s", w->function.cfn.name);
+		}
+		break;
+	}
+}
+
+void stack_print(struct stack s[static 1]) {
+	printf("[ ");
+	for(size_t i = 0; i < s->ndata; i++) {
+		struct word *w = s->data[i];
+		print_word(w);
+		printf(" ");
+	}
+	printf("]\n");
 }
 
 _Bool any_fail(size_t n, ...) {
@@ -51,6 +108,85 @@ void __addfunction(struct environment env[static 1]) {
 	word_result->type = WORD_TYPE_VALUE;
 	word_result->value.type = WORD_VALUE_TYPE_INTEGER;
 	word_result->value.integer = add_result;
+	stack_push(env->stack, word_result);
+
+	free(a);
+	free(b);
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
+
+void __putstestffifunction(struct environment env[static 1]) {
+	ffi_cif cif;
+	ffi_type *args[1];
+	void *values[1];
+	char *s;
+	ffi_arg rc;
+  
+  	/* Initialize the argument info vectors */    
+  	args[0] = &ffi_type_pointer;
+  	values[0] = &s;
+  
+	HMODULE module = LoadLibraryA("msvcrt.dll");
+	if(!module)
+		fatalf("error: LoadLibraryA failed, %lu\n", GetLastError());
+	FARPROC procaddr = GetProcAddress(module, "puts");
+
+  /* Initialize the cif */
+	if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, 1, 
+		       &ffi_type_sint, args) == FFI_OK) {
+      s = "Hello World!";
+      ffi_call(&cif, FFI_FN(procaddr), &rc, values);
+      /* rc now holds the result of the call to puts */
+      
+      /* values holds a pointer to the function's arg, so to 
+         call puts() again all we need to do is change the 
+         value of s */
+      s = "This is cool!";
+      ffi_call(&cif, FFI_FN(procaddr), &rc, values);
+    } else {
+    	fatalf("error: ffi_prep_cif failed. \n");
+    }
+}
+
+#pragma clang diagnostic pop
+
+void __equalfunction(struct environment env[static 1]) {
+	struct word *a, *b;
+	_Bool result;
+	_Bool are_equal = 1;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	if(a->type != b->type) {
+		are_equal = 0;
+	} else if(a->type == WORD_TYPE_VALUE) {
+		if(a->value.type != b->value.type) {
+			are_equal = 0;
+		} else {
+			switch(a->value.type) {
+			case WORD_VALUE_TYPE_INTEGER:
+				are_equal = a->value.integer == b->value.integer;
+				break;
+			case WORD_VALUE_TYPE_STRING:
+				are_equal = strcmp(a->value.string, b->value.string) == 0;
+				break;
+			default:
+				fatalf("error: unsupported equality compairson for type.\n");
+			}
+		}
+	} else {
+		are_equal = 0;
+	}
+		
+	int64_t equality_result = are_equal;
+	struct word *word_result = calloc(1, sizeof(*word_result));
+	word_result->type = WORD_TYPE_VALUE;
+	word_result->value.type = WORD_VALUE_TYPE_INTEGER;
+	word_result->value.integer = equality_result;
 	stack_push(env->stack, word_result);
 
 	free(a);
@@ -101,16 +237,6 @@ void __applyfunction(struct environment env[static 1]) {
 	free(a);
 }
 
-void __printvalue(struct word a[static 1]) {
-	switch(a->value.type) {
-	case WORD_VALUE_TYPE_INTEGER:
-		printf("%lld\n", a->value.integer);
-		break;
-	default:
-		fatalf("error: trying to print unsupported value");
-	}
-}
-
 void __printfunction(struct environment env[static 1]) {
 	struct word *a;
 	_Bool result;
@@ -119,24 +245,15 @@ void __printfunction(struct environment env[static 1]) {
 	if(!result)
 		fatalf("error: stack_pop failed, empty stack\n");
 
-	switch(a->type) {
-		case WORD_TYPE_VALUE: {
-			__printvalue(a);
-			break;
-		}
-		case WORD_TYPE_LAMBDA: {
-			printf("lambda:%p\n", &a->lambda);
-			break;
-		}
-		case WORD_TYPE_FUNCTION: {
-			printf("fn:%p\n", &a->function.cfunction);
-			break;
-		}
-	}
+	print_word(a);
+	printf("\n");
 
 	free(a);
 }
 
+void __printsfunction(struct environment env[static 1]) {
+	stack_print(env->stack);
+}
 
 void __dropfunction(struct environment env[static 1]) {
 	struct word *a;
@@ -221,6 +338,61 @@ void __bifunction(struct environment env[static 1]) {
 	__applyfunction(env);
 }
 
+void __composefunction(struct environment env[static 1]) {
+	struct word *a, *b, *c;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	if(a->type != WORD_TYPE_LAMBDA && b->type != WORD_TYPE_LAMBDA)
+		fatalf("error: compose operating on non lambda type.\n");
+
+	struct function *afn = a->lambda;
+	struct function *bfn = b->lambda;
+
+	c = calloc(1, sizeof(*c));
+	c->type = WORD_TYPE_LAMBDA;
+	c->lambda = afn;
+
+	for(size_t i = 0; i < bfn->size; i++) {
+		function_add_word(c->lambda, bfn->words[i]);
+	}
+
+	stack_push(env->stack, c);
+
+	free(a);
+	free(b);
+}
+
+void __curryfunction(struct environment env[static 1]) {
+	struct word *a, *b, *c;
+	_Bool result;
+
+	result = any_fail(2, stack_pop(env->stack, &a), stack_pop(env->stack, &b));
+	if(!result)
+		fatalf("error: stack_pop failed, empty stack\n");
+
+	if(b->type != WORD_TYPE_LAMBDA)
+		fatalf("error: curry is operating on non lambda type.\n");
+
+	struct function *bfn = b->lambda;
+	c = calloc(1, sizeof(*c));
+	c->type = WORD_TYPE_LAMBDA;
+	c->lambda = bfn;
+
+	function_add_word(c->lambda, a);
+	struct word *temp = c->lambda->words[0];
+	c->lambda->words[0] = c->lambda->words[c->lambda->size - 1];
+	c->lambda->words[c->lambda->size - 1] = temp;
+
+	stack_push(env->stack, c);
+
+	free(a);
+	free(b);
+}
+
 void __timesfunction(struct environment env[static 1]) {
 	struct word *a, *b;
 	_Bool result;
@@ -241,7 +413,8 @@ void __timesfunction(struct environment env[static 1]) {
 		__applyfunction(env);
 	}
 
-	free(a); free(b);
+	free(a);
+	free(b);
 }
 
 void __dupfunction(struct environment env[static 1]) {
@@ -253,7 +426,8 @@ void __dupfunction(struct environment env[static 1]) {
 	if(!result)
 		fatalf("error: stack_pop failed, empty stack\n");
 
-	memcpy(b, a, sizeof(*a));
+	b = malloc(sizeof(*a));
+	word_copy(b, a);
 
 	stack_push(env->stack, a);
 	stack_push(env->stack, b);
@@ -282,13 +456,47 @@ void environment_execute(struct environment env[static 1]) {
 			stack_push(env->stack, w_copy);
 			break;
 		case WORD_TYPE_FUNCTION:
-			if(w->function.is_cfunction) {
-				w->function.cfunction(env);
-			} else {
+			if(w->function.type == FUNCTION_TYPE_CFUNCTION) {
+				w->function.cfn.function(env);
+			} else if(w->function.type == FUNCTION_TYPE_REGULAR) {
 				struct environment subenv;
 				environment_copy(&subenv, env);
-				subenv.entry = w->function.function;
+				subenv.entry = w->function.fn;
 				environment_execute(&subenv);
+			} else if(w->function.type == FUNCTION_TYPE_FFI) {
+				struct ffi_function *fn = w->function.ffi_fn;
+				void **values = malloc(sizeof(*values) * fn->args_size);
+				size_t values_size = 0;
+				ffi_arg result;
+
+				for(int i = 0; i < fn->args_size; i++) {
+					struct word *a;
+
+					if(!stack_pop(env->stack, &a))
+						fatalf("error: stack_pop failed, empty stack\n");
+
+					if(a->type != WORD_TYPE_VALUE)
+						fatalf("error: ffi functions only accept values.\n");
+
+					switch(a->value.type) {
+						case WORD_VALUE_TYPE_INTEGER:
+							values[values_size++] = &a->value.integer;
+							break;
+						case WORD_VALUE_TYPE_STRING:
+							values[values_size++] = &a->value.string;
+							break;
+					}
+
+					free(a);
+				}
+
+				printf("%p", fn->cfn);
+				ffi_call(&fn->cif, FFI_FN(fn->cfn), &result, values);
+				struct word *word_result = calloc(1, sizeof(*word_result));
+				word_result->type = WORD_TYPE_VALUE;
+				word_result->value.type = WORD_VALUE_TYPE_INTEGER;
+				word_result->value.integer = result;
+				stack_push(env->stack, word_result);
 			}
 			break;
 		}
