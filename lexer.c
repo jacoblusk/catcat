@@ -1,223 +1,245 @@
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-#include "lexer.h"
 #include "error.h"
+#include "lexer.h"
 
-struct token *token_make_token(enum token_type type, struct cursor *cursor, char const lexeme[static 1]) {
-	struct token *token = calloc(1, sizeof(*token));
-	token->type = type;
+struct token *token_make(enum token_type type, struct cursor *cursor,
+                         char const *lexeme) {
+    struct token *token = calloc(1, sizeof(*token));
+    if (!token)
+        return NULL;
 
-	memcpy(&token->cursor, cursor, sizeof(*cursor));
-	token->lexeme = lexeme;
-	return token;
+    token->type = type;
+
+    memcpy(&token->cursor, cursor, sizeof(*cursor));
+    token->lexeme = lexeme;
+    return token;
 }
 
-struct token *token_make_syntax(char c, struct cursor cursor[static 1]) {
-	struct token *token = calloc(1, sizeof(*token));
-	enum token_type type;
+void token_destroy(struct token *token) {
+    free(token->lexeme);
 
-	switch(c) {
-	case '[':
-		type = TOKEN_TYPE_LEFT_BRACKET;
-		break;
-	case ']':
-		type = TOKEN_TYPE_RIGHT_BRACKET;
-		break;
-	case ':':
-		type = TOKEN_TYPE_COLON;
-		break;
-	case ';':
-		type = TOKEN_TYPE_SEMICOLON;
-		break;
-	case '.':
-	case '+':
-	case '*':
-	case '-':
-		type = TOKEN_TYPE_IDENTIFIER;
-		break;
-	default:
-		fatalf("recieved non-syntax token in token_make_syntax '%c'\n", c);
-	}
+    if (token->type == TOKEN_TYPE_LITERAL) {
+        switch (token->type) {
+        case LITERAL_TYPE_STRING:
+            free(token->literal.string);
+            break;
+        }
+    }
 
-	token->type = type;
-	memcpy(&token->cursor, cursor, sizeof(*cursor));
-
-	char *lexeme = malloc(sizeof(char) * 2);
-	lexeme[0] = c;
-	lexeme[1] = '\0';
-
-	token->lexeme = lexeme;
-	return token;
+    memset(token, 0, sizeof(*token));
+    free(token);
 }
 
-void tokens_prepend(struct token *tokens[static 1], struct token token[static 1]) {
-	struct token *head = *tokens;
-	token->next = head;
-	*tokens = token; 
+struct token *token_make_syntax(char c, struct cursor *cursor) {
+    struct token *token = calloc(1, sizeof(*token));
+    if (!token)
+        return NULL;
+
+    enum token_type type;
+
+    switch (c) {
+    case '[':
+        type = TOKEN_TYPE_LEFT_BRACKET;
+        break;
+    case ']':
+        type = TOKEN_TYPE_RIGHT_BRACKET;
+        break;
+    case ':':
+        type = TOKEN_TYPE_COLON;
+        break;
+    case ';':
+        type = TOKEN_TYPE_SEMICOLON;
+        break;
+    case '.':
+    case '+':
+    case '*':
+    case '-':
+        type = TOKEN_TYPE_IDENTIFIER;
+        break;
+    default:
+        fatalf("recieved non-syntax token in token_make_syntax '%c'\n", c);
+    }
+
+    token->type = type;
+    memcpy(&token->cursor, cursor, sizeof(*cursor));
+
+    char *lexeme = malloc(sizeof(char) * 2);
+    lexeme[0]    = c;
+    lexeme[1]    = '\0';
+
+    token->lexeme = lexeme;
+    return token;
 }
 
-void tokens_reverse(struct token *tokens[static 1]) {
-	struct token *current = *tokens;
-	struct token *prev = NULL, *next = NULL;
-
-	while(current != NULL) {
-		next = current->next;
-		current->next = prev;
-
-		prev = current;
-		current = next;
-	}
-
-	*tokens = prev;
+void tokens_prepend(struct token **tokens, struct token *token) {
+    struct token *head = *tokens;
+    token->next        = head;
+    *tokens            = token;
 }
 
-void tokens_pop(struct token *tokens[static 1], struct token *out[static 1]) {
-	struct token *head = *tokens;
+void tokens_reverse(struct token **tokens) {
+    struct token *current = *tokens;
+    struct token *prev = NULL, *next = NULL;
 
-	if(!head) {
-		*out = NULL;
-	} else {
-		*tokens = head->next;
-		*out = head;
-	}
+    while (current != NULL) {
+        next          = current->next;
+        current->next = prev;
+
+        prev    = current;
+        current = next;
+    }
+
+    *tokens = prev;
 }
 
-char lexer_advance(struct lexer l[static 1]) {
-	char c = *l->source;
-	if(c == '\n') {
-		l->cursor.line++;
-		l->cursor.column = 0;
-	} else {
-		l->cursor.column++;
-	}
+void tokens_pop(struct token **tokens, struct token **out) {
+    struct token *head = *tokens;
 
-	if(c != '\0') {
-		l->source++;
-	}
-
-	return c;
+    if (!head) {
+        *out = NULL;
+    } else {
+        *tokens = head->next;
+        *out    = head;
+    }
 }
 
-char lexer_peek(struct lexer l[static 1]) {
-	return *l->source;
+char lexer_advance(struct lexer *lexer) {
+    char c = *lexer->source;
+    if (c == '\n') {
+        lexer->cursor.line++;
+        lexer->cursor.column = 0;
+    } else {
+        lexer->cursor.column++;
+    }
+
+    if (c != '\0') {
+        lexer->source++;
+    }
+
+    return c;
 }
 
-void lexer_init(struct lexer l[static 1]) {
-	memset(l, 0, sizeof(*l));
-}
+char lexer_peek(struct lexer *lexer) { return *lexer->source; }
+
+void lexer_init(struct lexer *lexer) { memset(lexer, 0, sizeof(*lexer)); }
 
 _Bool isvalid_ident(char c) {
-	return isalpha(c) || isdigit(c) || c == '-' || c =='?' || c == '!' || c =='@' || c == '*';
+    return isalpha(c) || isdigit(c) || c == '-' || c == '?' || c == '!' ||
+           c == '@' || c == '*';
 }
 
-struct token *lexer_lex_identifier(struct lexer l[static 1]) {
-	size_t length = 0;
-	struct cursor cursor = l->cursor;
-	char c;
+struct token *lexer_lex_identifier(struct lexer *lexer) {
+    size_t length        = 0;
+    struct cursor cursor = lexer->cursor;
+    char c;
 
-	while(isvalid_ident(c = lexer_peek(l))) {
-		length++;
-		lexer_advance(l);
-	}
+    while (isvalid_ident(c = lexer_peek(lexer))) {
+        length++;
+        lexer_advance(lexer);
+    }
 
-	char *identifier = malloc(sizeof(char) * (length + 1));
-	identifier[length] = '\0';
+    char *identifier = malloc(sizeof(char) * (length + 1));
+    if (!identifier)
+        return NULL;
 
-	memcpy(identifier, l->source - length, sizeof(char) * length);
+    identifier[length] = '\0';
 
-	struct token *token = token_make_token(TOKEN_TYPE_IDENTIFIER, &cursor, identifier);
-	return token;
+    memcpy(identifier, lexer->source - length, sizeof(char) * length);
+
+    struct token *token =
+        token_make(TOKEN_TYPE_IDENTIFIER, &cursor, identifier);
+    return token;
 }
 
-struct token *lexer_lex_string(struct lexer l[static 1]) {
-	size_t length = 0;
-	struct cursor cursor = l->cursor;
-	char c;
+struct token *lexer_lex_string(struct lexer *lexer) {
+    size_t length        = 0;
+    struct cursor cursor = lexer->cursor;
+    char c;
 
-	lexer_advance(l);
+    lexer_advance(lexer);
 
-	while((c = lexer_peek(l)) != '"') {
-		length++;
-		lexer_advance(l);
-	}
+    while ((c = lexer_peek(lexer)) != '"') {
+        length++;
+        lexer_advance(lexer);
+    }
 
-	lexer_advance(l);
+    lexer_advance(lexer);
 
-	char *string = malloc(sizeof(char) * (length + 1));
-	string[length] = '\0';
+    char *string   = malloc(sizeof(char) * (length + 1));
+    string[length] = '\0';
 
-	memcpy(string, l->source - length - 1, sizeof(char) * length);
+    memcpy(string, lexer->source - length - 1, sizeof(char) * length);
 
-	struct token *token = token_make_token(TOKEN_TYPE_STRING, &cursor, string);
-	token->literal.type = LITERAL_TYPE_STRING;
-	token->literal.string = string;
+    struct token *token   = token_make(TOKEN_TYPE_LITERAL, &cursor, string);
+    token->literal.type   = LITERAL_TYPE_STRING;
+    token->literal.string = string;
 
-	return token;
+    return token;
 }
 
-struct token *lexer_lex_number(struct lexer l[static 1]) {
-	size_t length = 0;
-	struct cursor cursor = l->cursor;
-	char c;
+struct token *lexer_lex_number(struct lexer *lexer) {
+    size_t length        = 0;
+    struct cursor cursor = lexer->cursor;
+    char c;
 
-	while(isdigit(c = lexer_peek(l))) {
-		length++;
-		lexer_advance(l);
-	}
+    while (isdigit(c = lexer_peek(lexer))) {
+        length++;
+        lexer_advance(lexer);
+    }
 
-	char *number = malloc(sizeof(char) * (length + 1));
-	number[length] = '\0';
+    char *number   = malloc(sizeof(char) * (length + 1));
+    number[length] = '\0';
 
-	memcpy(number, l->source - length, sizeof(char) * length);
+    memcpy(number, lexer->source - length, sizeof(char) * length);
 
-	struct token *token = token_make_token(TOKEN_TYPE_NUMBER, &cursor, number);
-	token->literal.type = LITERAL_TYPE_INTEGER;
-	token->literal.integer = atoi(number);
+    struct token *token    = token_make(TOKEN_TYPE_LITERAL, &cursor, number);
+    token->literal.type    = LITERAL_TYPE_INTEGER;
+    token->literal.integer = atoi(number);
 
-	return token;
+    return token;
 }
 
-struct token *lexer_tokenize(struct lexer l[static 1], 
-		char const source[static 1]) {
-	char c;
-	l->source = source;
-	struct token *tokens = NULL;
+struct token *lexer_tokenize(struct lexer *lexer, char const *source) {
+    char c;
+    lexer->source        = source;
+    struct token *tokens = NULL;
 
-	while((c = lexer_peek(l)) != '\0') {
-		struct token *token = NULL;
+    while ((c = lexer_peek(lexer)) != '\0') {
+        struct token *token = NULL;
 
-		if(isspace(c)) {
-			lexer_advance(l);
-			continue;
-		}
+        if (isspace(c)) {
+            lexer_advance(lexer);
+            continue;
+        }
 
-		switch(c) {
-		case '[':
-		case ']':
-		case ':':
-		case ';':
-		case '+':
-		case '*':
-		case '.':
-			token = token_make_syntax(c, &l->cursor);
-			lexer_advance(l);
-			goto add_token_to_list;
-		case '"':
-			token = lexer_lex_string(l);
-		}
+        switch (c) {
+        case '[':
+        case ']':
+        case ':':
+        case ';':
+        case '+':
+        case '*':
+        case '.':
+            token = token_make_syntax(c, &lexer->cursor);
+            lexer_advance(lexer);
+            goto add_token_to_list;
+        case '"':
+            token = lexer_lex_string(lexer);
+        }
 
-		if(isalpha(c)) {
-			token = lexer_lex_identifier(l);
-		} else if(isdigit(c)) {
-			token = lexer_lex_number(l);
-		}
+        if (isalpha(c)) {
+            token = lexer_lex_identifier(lexer);
+        } else if (isdigit(c)) {
+            token = lexer_lex_number(lexer);
+        }
 
-	add_token_to_list:
-		tokens_prepend(&tokens, token);
-	}
+    add_token_to_list:
+        tokens_prepend(&tokens, token);
+    }
 
-	tokens_reverse(&tokens);
-	return tokens;
+    tokens_reverse(&tokens);
+    return tokens;
 }
